@@ -58,6 +58,7 @@ from sklearn.model_selection import BaseCrossValidator
 
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.validation import validate_data
+from sklearn.utils.multiclass import check_classification_targets
 from sklearn.metrics.pairwise import pairwise_distances
 
 
@@ -82,6 +83,17 @@ class KNearestNeighbors(ClassifierMixin, BaseEstimator):
         self : instance of KNearestNeighbors
             The current instance of the classifier
         """
+        # Valide les inputs X et y
+        X, y = validate_data(self, X, y)
+        
+        # Vérifie que y est bien un type adapté à la classification
+        # (rejette les cibles continues/float)
+        check_classification_targets(y)
+
+        self.classes_ = np.unique(y)
+        self.X_ = X
+        self.y_ = y
+
         return self
 
     def predict(self, X):
@@ -97,8 +109,23 @@ class KNearestNeighbors(ClassifierMixin, BaseEstimator):
         y : ndarray, shape (n_test_samples,)
             Predicted class labels for each test data sample.
         """
-        y_pred = np.zeros(X.shape[0])
-        return y_pred
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
+
+        # Calcul des distances
+        distances = pairwise_distances(X, self.X_)
+
+        # Indices des k plus proches voisins
+        k_neighbors_indices = np.argsort(distances, axis=1)[:, :self.n_neighbors]
+        k_neighbors_labels = self.y_[k_neighbors_indices]
+
+        # Vote majoritaire
+        y_pred = []
+        for row in k_neighbors_labels:
+            vals, counts = np.unique(row, return_counts=True)
+            y_pred.append(vals[np.argmax(counts)])
+
+        return np.array(y_pred)
 
     def score(self, X, y):
         """Calculate the score of the prediction.
@@ -111,11 +138,14 @@ class KNearestNeighbors(ClassifierMixin, BaseEstimator):
             target values.
 
         Returns
-        ----------
+        -------
         score : float
             Accuracy of the model computed for the (X, y) pairs.
         """
-        return 0.
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
+        y_pred = self.predict(X)
+        return np.mean(y_pred == y)
 
 
 class MonthlySplit(BaseCrossValidator):
@@ -155,9 +185,30 @@ class MonthlySplit(BaseCrossValidator):
         n_splits : int
             The number of splits.
         """
-        return 0
+        dates = self._get_dates(X)
+        
+        # Gestion DatetimeIndex vs Series pour l'accès aux périodes
+        if hasattr(dates, 'dt'):
+            months = dates.dt.to_period("M").unique()
+        else:
+            months = dates.to_period("M").unique()
+            
+        return len(months) - 1
 
-    def split(self, X, y, groups=None):
+    def _get_dates(self, X):
+        """Helper to extract and validate the date column."""
+        if self.time_col == 'index':
+            dates = X.index
+        else:
+            dates = X[self.time_col]
+        
+        if not pd.api.types.is_datetime64_any_dtype(dates):
+            raise ValueError(
+                "The column or index must be of datetime type."
+            )
+        return dates
+
+    def split(self, X, y=None, groups=None):
         """Generate indices to split data into training and test set.
 
         Parameters
@@ -177,12 +228,22 @@ class MonthlySplit(BaseCrossValidator):
         idx_test : ndarray
             The testing set indices for that split.
         """
+        dates = self._get_dates(X)
+        
+        # Gestion DatetimeIndex vs Series
+        if hasattr(dates, 'dt'):
+            periods = dates.dt.to_period("M")
+        else:
+            periods = dates.to_period("M")
 
-        n_samples = X.shape[0]
+        unique_periods = sorted(periods.unique())
         n_splits = self.get_n_splits(X, y, groups)
+
         for i in range(n_splits):
-            idx_train = range(n_samples)
-            idx_test = range(n_samples)
-            yield (
-                idx_train, idx_test
-            )
+            train_period = unique_periods[i]
+            test_period = unique_periods[i + 1]
+
+            idx_train = np.flatnonzero(periods == train_period)
+            idx_test = np.flatnonzero(periods == test_period)
+
+            yield (idx_train, idx_test)
