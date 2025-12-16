@@ -196,8 +196,8 @@ class MonthlySplit(BaseCrossValidator):
 
         return len(months) - 1
 
-    def _get_dates(self, X):
-        """Helper to extract and validate the date column."""
+    def get_dates(self, X):
+        """Help to extract and validate the date column."""
         if self.time_col == 'index':
             dates = X.index
         else:
