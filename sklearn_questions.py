@@ -85,7 +85,7 @@ class KNearestNeighbors(ClassifierMixin, BaseEstimator):
         """
         # Valide les inputs X et y
         X, y = validate_data(self, X, y)
-        
+
         # Vérifie que y est bien un type adapté à la classification
         # (rejette les cibles continues/float)
         check_classification_targets(y)
@@ -116,7 +116,8 @@ class KNearestNeighbors(ClassifierMixin, BaseEstimator):
         distances = pairwise_distances(X, self.X_)
 
         # Indices des k plus proches voisins
-        k_neighbors_indices = np.argsort(distances, axis=1)[:, :self.n_neighbors]
+        i = self.n_neighbors
+        k_neighbors_indices = np.argsort(distances, axis=1)[:, :i]
         k_neighbors_labels = self.y_[k_neighbors_indices]
 
         # Vote majoritaire
@@ -186,13 +187,13 @@ class MonthlySplit(BaseCrossValidator):
             The number of splits.
         """
         dates = self._get_dates(X)
-        
+
         # Gestion DatetimeIndex vs Series pour l'accès aux périodes
         if hasattr(dates, 'dt'):
             months = dates.dt.to_period("M").unique()
         else:
             months = dates.to_period("M").unique()
-            
+
         return len(months) - 1
 
     def _get_dates(self, X):
@@ -201,7 +202,7 @@ class MonthlySplit(BaseCrossValidator):
             dates = X.index
         else:
             dates = X[self.time_col]
-        
+
         if not pd.api.types.is_datetime64_any_dtype(dates):
             raise ValueError(
                 "The column or index must be of datetime type."
@@ -229,7 +230,7 @@ class MonthlySplit(BaseCrossValidator):
             The testing set indices for that split.
         """
         dates = self._get_dates(X)
-        
+
         # Gestion DatetimeIndex vs Series
         if hasattr(dates, 'dt'):
             periods = dates.dt.to_period("M")
